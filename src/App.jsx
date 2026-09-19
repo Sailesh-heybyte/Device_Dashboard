@@ -4,16 +4,14 @@ import {
   getLastGps,
   getLastRfid,
 } from "./api/deviceDebug.js";
+import PayloadTable from "./components/PayloadTable.jsx";
 import "./App.scss";
 
 const ENDPOINTS = [
   { label: "Diagnostics", fetcher: getLastDiagnostics },
-  { label: "GPS", fetcher: getLastGps },
-  { label: "RFID", fetcher: getLastRfid },
+  { label: "GPS",         fetcher: getLastGps },
+  { label: "RFID",        fetcher: getLastRfid },
 ];
-
-const formatBody = (body) =>
-  typeof body === "object" ? JSON.stringify(body, null, 2) : String(body);
 
 export default function App() {
   const [serial, setSerial] = useState("");
@@ -30,47 +28,52 @@ export default function App() {
     const trimmedSerial = serial.trim();
     setIsFetching(true);
 
-    const loadingState = {};
-    for (const endpoint of ENDPOINTS) {
-      loadingState[endpoint.label] = { loading: true };
+    const initialLoadState = {};
+    for (const ep of ENDPOINTS) {
+      initialLoadState[ep.label] = { loading: true };
     }
-    setResults(loadingState);
+    setResults(initialLoadState);
 
-    const requests = ENDPOINTS.map(async (endpoint) => {
+    const fetchPromises = ENDPOINTS.map(async (endpoint) => {
       try {
         const response = await endpoint.fetcher(trimmedSerial);
-        setResults((prev) => ({
-          ...prev,
-          [endpoint.label]: {
-            url: response.url,
-            status: response.status,
-            elapsed: response.elapsed,
-            body: response.body,
-            error: null,
-            loading: false,
-          },
-        }));
+        const cardData = {
+          label: endpoint.label,
+          url: response.url,
+          status: response.status,
+          elapsed: response.elapsed,
+          body: response.body,
+          error: null,
+          loading: false,
+        };
+
+        setResults((prev) => ({ ...prev, [endpoint.label]: cardData }));
+        return cardData;
       } catch (err) {
-        setResults((prev) => ({
-          ...prev,
-          [endpoint.label]: {
-            url: null,
-            status: null,
-            elapsed: null,
-            body: null,
-            error: err.message,
-            loading: false,
-          },
-        }));
+        const errorData = {
+          label: endpoint.label,
+          url: "",
+          status: null,
+          elapsed: 0,
+          body: null,
+          error: err.message || "Network request failed",
+          loading: false,
+        };
+
+        setResults((prev) => ({ ...prev, [endpoint.label]: errorData }));
+        return errorData;
       }
     });
 
-    await Promise.allSettled(requests);
+    await Promise.allSettled(fetchPromises);
     setIsFetching(false);
   };
 
   const handleCopy = async (label, body) => {
-    await navigator.clipboard.writeText(formatBody(body));
+    if (!body) return;
+    const textToCopy =
+      typeof body === "object" ? JSON.stringify(body, null, 2) : String(body);
+    await navigator.clipboard.writeText(textToCopy);
     setCopiedCard(label);
     setTimeout(() => setCopiedCard(null), 2000);
   };
@@ -80,10 +83,7 @@ export default function App() {
       <div className="page-title">
         <div>
           <h2>Device Debug Console</h2>
-          <p>
-            Temporary tool for firmware QA. Diagnostics, GPS and RFID ingest
-            payloads.
-          </p>
+          <p>Live device diagnostics, GPS tracking, and RFID ingest payloads</p>
         </div>
       </div>
 
@@ -100,7 +100,7 @@ export default function App() {
                 type="text"
                 value={serial}
                 onChange={(event) => setSerial(event.target.value)}
-                placeholder="Enter device serial"
+                placeholder="Enter device serial number (e.g. TAMS0001)"
                 autoFocus
               />
             </div>
@@ -145,7 +145,7 @@ export default function App() {
                 <div className="card-body">
                   <div className="card-loading">
                     <div className="loading-spinner" />
-                    <span>Fetching...</span>
+                    <span>Fetching {endpoint.label} payload...</span>
                   </div>
                 </div>
               </div>
@@ -200,7 +200,9 @@ export default function App() {
                       </div>
                     )}
 
-                    <pre className="raw-response">{formatBody(card.body)}</pre>
+                    {card.status !== 404 && card.status !== 400 && (
+                      <PayloadTable body={card.body} />
+                    )}
                   </>
                 )}
               </div>
