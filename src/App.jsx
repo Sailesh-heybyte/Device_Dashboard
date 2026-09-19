@@ -1,17 +1,9 @@
 import { useState } from "react";
-import {
-  getLastDiagnostics,
-  getLastGps,
-  getLastRfid,
-} from "./api/deviceDebug.js";
+import { fetchAllDeviceDebugData } from "./api/deviceDebug.js";
 import PayloadTable from "./components/PayloadTable.jsx";
 import "./App.scss";
 
-const ENDPOINTS = [
-  { label: "Diagnostics", fetcher: getLastDiagnostics },
-  { label: "GPS",         fetcher: getLastGps },
-  { label: "RFID",        fetcher: getLastRfid },
-];
+const CARD_LABELS = ["Diagnostics", "GPS", "RFID"];
 
 export default function App() {
   const [serial, setSerial] = useState("");
@@ -29,44 +21,27 @@ export default function App() {
     setIsFetching(true);
 
     const initialLoadState = {};
-    for (const ep of ENDPOINTS) {
-      initialLoadState[ep.label] = { loading: true };
+    for (const label of CARD_LABELS) {
+      initialLoadState[label] = { loading: true };
     }
     setResults(initialLoadState);
 
-    const fetchPromises = ENDPOINTS.map(async (endpoint) => {
-      try {
-        const response = await endpoint.fetcher(trimmedSerial);
-        const cardData = {
-          label: endpoint.label,
-          url: response.url,
-          status: response.status,
-          elapsed: response.elapsed,
-          body: response.body,
-          error: null,
-          loading: false,
-        };
-
-        setResults((prev) => ({ ...prev, [endpoint.label]: cardData }));
-        return cardData;
-      } catch (err) {
-        const errorData = {
-          label: endpoint.label,
-          url: "",
+    try {
+      const debugData = await fetchAllDeviceDebugData(trimmedSerial);
+      setResults(debugData);
+    } catch (err) {
+      const errorResults = {};
+      for (const label of CARD_LABELS) {
+        errorResults[label] = {
           status: null,
-          elapsed: 0,
           body: null,
           error: err.message || "Network request failed",
-          loading: false,
         };
-
-        setResults((prev) => ({ ...prev, [endpoint.label]: errorData }));
-        return errorData;
       }
-    });
-
-    await Promise.allSettled(fetchPromises);
-    setIsFetching(false);
+      setResults(errorResults);
+    } finally {
+      setIsFetching(false);
+    }
   };
 
   const handleCopy = async (label, body) => {
@@ -89,7 +64,9 @@ export default function App() {
 
       <div className="card">
         <div className="card-header">
-          <h3>Device Lookup</h3>
+          <div className="card-header-title">
+            <h3>Device Lookup</h3>
+          </div>
         </div>
         <form onSubmit={handleFetch} className="console-form">
           <div className="form-row form-input-row">
@@ -118,14 +95,16 @@ export default function App() {
       </div>
 
       <div className="results-grid">
-        {ENDPOINTS.map((endpoint) => {
-          const card = results[endpoint.label];
+        {CARD_LABELS.map((label) => {
+          const card = results[label];
 
           if (!card) {
             return (
-              <div key={endpoint.label} className="card result-card">
+              <div key={label} className="card result-card">
                 <div className="card-header">
-                  <h3>{endpoint.label}</h3>
+                  <div className="card-header-title">
+                    <h3>{label}</h3>
+                  </div>
                 </div>
                 <div className="card-body">
                   <div className="empty-state">
@@ -138,14 +117,16 @@ export default function App() {
 
           if (card.loading) {
             return (
-              <div key={endpoint.label} className="card result-card">
+              <div key={label} className="card result-card">
                 <div className="card-header">
-                  <h3>{endpoint.label}</h3>
+                  <div className="card-header-title">
+                    <h3>{label}</h3>
+                  </div>
                 </div>
                 <div className="card-body">
                   <div className="card-loading">
                     <div className="loading-spinner" />
-                    <span>Fetching {endpoint.label} payload...</span>
+                    <span>Fetching {label} payload...</span>
                   </div>
                 </div>
               </div>
@@ -155,16 +136,27 @@ export default function App() {
           const is2xx = card.status >= 200 && card.status < 300;
 
           return (
-            <div key={endpoint.label} className="card result-card">
+            <div key={label} className="card result-card">
               <div className="card-header">
-                <h3>{endpoint.label}</h3>
+                <div className="card-header-title">
+                  <h3>{label}</h3>
+                  {card.status !== null && card.status !== undefined && (
+                    <span
+                      className={`status-badge ${
+                        is2xx ? "status-success" : "status-error"
+                      }`}
+                    >
+                      Status: {card.status}
+                    </span>
+                  )}
+                </div>
                 {card.body && (
                   <button
                     type="button"
                     className="secondary-button"
-                    onClick={() => handleCopy(endpoint.label, card.body)}
+                    onClick={() => handleCopy(label, card.body)}
                   >
-                    {copiedCard === endpoint.label ? "Copied" : "Copy"}
+                    {copiedCard === label ? "Copied JSON" : "Copy JSON"}
                   </button>
                 )}
               </div>
@@ -176,18 +168,6 @@ export default function App() {
                   </div>
                 ) : (
                   <>
-                    <div className="result-meta">
-                      <span
-                        className={`status-badge ${
-                          is2xx ? "status-success" : "status-error"
-                        }`}
-                      >
-                        Status: {card.status}
-                      </span>
-                      <span className="result-time">{card.elapsed} ms</span>
-                      <span className="result-url">{card.url}</span>
-                    </div>
-
                     {card.status === 404 && (
                       <div className="status-notice">
                         No data for this serial yet.

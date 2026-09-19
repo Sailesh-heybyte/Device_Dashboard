@@ -5,10 +5,11 @@ function formatHeader(key) {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-function renderCellValue(value) {
+function formatCellValue(value) {
   if (value === null || value === undefined || value === "") {
-    return <span className="val-badge neutral">—</span>;
+    return <span className="cell-empty">—</span>;
   }
+
   if (typeof value === "boolean") {
     return (
       <span className={`val-badge ${value ? "pass" : "fail"}`}>
@@ -16,22 +17,49 @@ function renderCellValue(value) {
       </span>
     );
   }
-  const str = String(value);
-  if (str.toUpperCase() === "PASS") {
+
+  const str = String(value).trim();
+  const upper = str.toUpperCase();
+
+  if (upper === "PASS") {
     return <span className="val-badge pass">PASS</span>;
   }
-  if (str.toUpperCase() === "FAIL") {
+  if (upper === "FAIL") {
     return <span className="val-badge fail">FAIL</span>;
   }
-  if (typeof value === "object") {
-    return JSON.stringify(value);
+  if (upper === "ACTIVE" || upper === "BOARDED" || upper === "OK") {
+    return <span className="val-badge status-ok">{str}</span>;
   }
-  return str;
+
+  if (
+    typeof value === "string" &&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(value)
+  ) {
+    const formatted = value.replace("T", " ").replace(/\.\d+Z?$/, " UTC");
+    return <span className="cell-mono cell-timestamp">{formatted}</span>;
+  }
+
+  if (
+    typeof value === "string" &&
+    (/^[0-9a-fA-F-]{24,}$/.test(value) || /^[0-9a-fA-F]{8}$/.test(value))
+  ) {
+    return (
+      <span className="cell-mono" title={value}>
+        {value}
+      </span>
+    );
+  }
+
+  if (typeof value === "object") {
+    return <span className="cell-mono">{JSON.stringify(value)}</span>;
+  }
+
+  return <span>{str}</span>;
 }
 
 function renderTableGrid(items) {
   if (!items || items.length === 0) {
-    return <div className="empty-state">No records available.</div>;
+    return <div className="table-empty-notice">No records available.</div>;
   }
 
   const isObjectList = items.some(
@@ -50,7 +78,7 @@ function renderTableGrid(items) {
           <tbody>
             {items.map((val, idx) => (
               <tr key={idx}>
-                <td>{renderCellValue(val)}</td>
+                <td>{formatCellValue(val)}</td>
               </tr>
             ))}
           </tbody>
@@ -68,7 +96,7 @@ function renderTableGrid(items) {
 
   const columns = Array.from(keySet);
   if (columns.length === 0) {
-    return <div className="empty-state">Empty records.</div>;
+    return <div className="table-empty-notice">Empty records.</div>;
   }
 
   return (
@@ -85,7 +113,7 @@ function renderTableGrid(items) {
           {items.map((row, rowIdx) => (
             <tr key={rowIdx}>
               {columns.map((col) => (
-                <td key={col}>{renderCellValue(row?.[col])}</td>
+                <td key={col}>{formatCellValue(row?.[col])}</td>
               ))}
             </tr>
           ))}
@@ -114,13 +142,20 @@ export default function PayloadTable({ body }) {
         <div className="table-subgroup-container">
           {scalarEntries.length > 0 && (
             <div className="table-subgroup">
-              <div className="table-subgroup-title">Summary</div>
+              <div className="table-subgroup-header">
+                <h4>Summary</h4>
+              </div>
               {renderTableGrid([Object.fromEntries(scalarEntries)])}
             </div>
           )}
           {arrayEntries.map(([key, val]) => (
             <div key={key} className="table-subgroup">
-              <div className="table-subgroup-title">{formatHeader(key)}</div>
+              <div className="table-subgroup-header">
+                <h4>{formatHeader(key)}</h4>
+                <span className="record-count">
+                  {val.length} {val.length === 1 ? "record" : "records"}
+                </span>
+              </div>
               {val.length === 0 ? (
                 <div className="table-empty-notice">
                   No {formatHeader(key).toLowerCase()} recorded.
